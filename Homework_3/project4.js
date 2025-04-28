@@ -3,83 +3,240 @@
 // It returns the combined 4x4 transformation matrix as an array in column-major order.
 // The given projection matrix is also a 4x4 matrix stored as an array in column-major order.
 // You can use the MatrixMult function defined in project4.html to multiply two 4x4 matrices in the same format.
-function GetModelViewProjection( projectionMatrix, translationX, translationY, translationZ, rotationX, rotationY )
-{
-	// [TO-DO] Modify the code below to form the transformation matrix.
-	var trans = [
-		1, 0, 0, 0,
-		0, 1, 0, 0,
-		0, 0, 1, 0,
-		translationX, translationY, translationZ, 1
-	];
-	var mvp = MatrixMult( projectionMatrix, trans );
-	return mvp;
-}
+function GetModelViewProjection(
+    projectionMatrix,
+    translationX,
+    translationY,
+    translationZ,
+    rotationX,
+    rotationY
+) {
+    // Rotation around the X axis
+    var rotX = [1,0,0,0,
+        0,Math.cos(rotationX),Math.sin(rotationX),0,
+        0,-Math.sin(rotationX),Math.cos(rotationX),0,
+        0,0,0,1,
+    ];
 
+    // Rotation around the Y axis
+    var rotY = [Math.cos(rotationY),0,-Math.sin(rotationY),0,
+        0,1,0,0,
+        Math.sin(rotationY),0,Math.cos(rotationY),0,
+        0,0,0,1,
+    ];
+
+    // Translation
+    var trans = [1,0,0,0,
+        0,1,0,0,
+        0,0,1,0,
+        translationX,translationY,translationZ,1,
+    ];
+
+    // Compose the model matrix
+    var modelMatrix = MatrixMult(rotY, rotX); // First Y rotation, then X rotation
+    modelMatrix = MatrixMult(trans, modelMatrix); // Then apply translation
+
+    // Apply the projection
+    var mvp = MatrixMult(projectionMatrix, modelMatrix);
+    return mvp;
+}
 
 // [TO-DO] Complete the implementation of the following class.
 
-class MeshDrawer
-{
-	// The constructor is a good place for taking care of the necessary initializations.
-	constructor()
-	{
-		// [TO-DO] initializations
-	}
-	
-	// This method is called every time the user opens an OBJ file.
-	// The arguments of this function is an array of 3D vertex positions
-	// and an array of 2D texture coordinates.
-	// Every item in these arrays is a floating point value, representing one
-	// coordinate of the vertex position or texture coordinate.
-	// Every three consecutive elements in the vertPos array forms one vertex
-	// position and every three consecutive vertex positions form a triangle.
-	// Similarly, every two consecutive elements in the texCoords array
-	// form the texture coordinate of a vertex.
-	// Note that this method can be called multiple times.
-	setMesh( vertPos, texCoords )
-	{
-		// [TO-DO] Update the contents of the vertex buffer objects.
-		this.numTriangles = vertPos.length / 3;
-	}
-	
-	// This method is called when the user changes the state of the
-	// "Swap Y-Z Axes" checkbox. 
-	// The argument is a boolean that indicates if the checkbox is checked.
-	swapYZ( swap )
-	{
-		// [TO-DO] Set the uniform parameter(s) of the vertex shader
-	}
-	
-	// This method is called to draw the triangular mesh.
-	// The argument is the transformation matrix, the same matrix returned
-	// by the GetModelViewProjection function above.
-	draw( trans )
-	{
-		// [TO-DO] Complete the WebGL initializations before drawing
+class MeshDrawer {
+    // The constructor is a good place for taking care of the necessary initializations.
+    constructor() {
+        // [TO-DO] initializations
 
-		gl.drawArrays( gl.TRIANGLES, 0, this.numTriangles );
-	}
-	
-	// This method is called to set the texture of the mesh.
-	// The argument is an HTML IMG element containing the texture data.
-	setTexture( img )
-	{
-		// [TO-DO] Bind the texture
+        // Vertex shader
+        const vertexShaderSource = `
+                attribute vec3 aPosition;
+                attribute vec2 aTexCoord;
 
-		// You can set the texture image data using the following command.
-		gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img );
+                uniform mat4 uTransform;
+                uniform bool uSwapYZ;
 
-		// [TO-DO] Now that we have a texture, it might be a good idea to set
-		// some uniform parameter(s) of the fragment shader, so that it uses the texture.
-	}
-	
-	// This method is called when the user changes the state of the
-	// "Show Texture" checkbox. 
-	// The argument is a boolean that indicates if the checkbox is checked.
-	showTexture( show )
-	{
-		// [TO-DO] set the uniform parameter(s) of the fragment shader to specify if it should use the texture.
-	}
-	
+                varying vec2 vTexCoord;
+
+                void main() {
+                    vec3 pos = aPosition;
+                    if (uSwapYZ) {
+                        pos = vec3(pos.x, pos.z, pos.y);
+                    }
+                    gl_Position = uTransform * vec4(pos, 1.0);
+                    vTexCoord = aTexCoord;
+                }
+            `;
+
+        // Fragment shader
+        const fragmentShaderSource = `
+                precision mediump float;
+
+                uniform sampler2D uSampler;
+                uniform bool uShowTexture;
+
+                varying vec2 vTexCoord;
+
+                void main() {
+                    if (uShowTexture) {
+                        gl_FragColor = texture2D(uSampler, vTexCoord);
+                    } else {
+                        gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // White if no texture
+                    }
+                }
+            `;
+
+        // Shaders
+        this.shaderProgram = this.initShaders(
+            vertexShaderSource,
+            fragmentShaderSource
+        );
+
+        // Vertex buffer objects (VBOs)
+        this.vertexBuffer = gl.createBuffer();
+        this.texCoordBuffer = gl.createBuffer();
+
+        // Attribute and uniform locations
+        this.aPosition = gl.getAttribLocation(this.shaderProgram, "aPosition");
+        this.aTexCoord = gl.getAttribLocation(this.shaderProgram, "aTexCoord");
+        this.uTransform = gl.getUniformLocation(
+            this.shaderProgram,
+            "uTransform"
+        );
+        this.uSwapYZ = gl.getUniformLocation(this.shaderProgram, "uSwapYZ");
+        this.uShowTexture = gl.getUniformLocation(
+            this.shaderProgram,
+            "uShowTexture"
+        );
+
+        // Create a texture object
+        this.texture = gl.createTexture();
+
+    }
+
+    initShaders(vertexSource, fragmentSource) {
+        function compileShader(source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                return null;
+            }
+            return shader;
+        }
+
+        const vertexShader = compileShader(vertexSource, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader(
+            fragmentSource,
+            gl.FRAGMENT_SHADER
+        );
+
+        const shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            console.error(gl.getProgramInfoLog(shaderProgram));
+            return null;
+        }
+
+        return shaderProgram;
+    }
+
+    // This method is called every time the user opens an OBJ file.
+    // The arguments of this function is an array of 3D vertex positions
+    // and an array of 2D texture coordinates.
+    // Every item in these arrays is a floating point value, representing one
+    // coordinate of the vertex position or texture coordinate.
+    // Every three consecutive elements in the vertPos array forms one vertex
+    // position and every three consecutive vertex positions form a triangle.
+    // Similarly, every two consecutive elements in the texCoords array
+    // form the texture coordinate of a vertex.
+    // Note that this method can be called multiple times.
+    setMesh(vertPos, texCoords) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array(vertPos),
+            gl.STATIC_DRAW
+        );
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array(texCoords),
+            gl.STATIC_DRAW
+        );
+
+        this.numTriangles = vertPos.length / 3;
+    }
+
+    // This method is called when the user changes the state of the
+    // "Swap Y-Z Axes" checkbox.
+    // The argument is a boolean that indicates if the checkbox is checked.
+    swapYZ(swap) {
+        gl.useProgram(this.shaderProgram);
+        gl.uniform1i(this.uSwapYZ, swap ? 1 : 0);
+    }
+
+    // This method is called to draw the triangular mesh.
+    // The argument is the transformation matrix, the same matrix returned
+    // by the GetModelViewProjection function above.
+    draw(trans) {
+        gl.useProgram(this.shaderProgram);
+
+        // Bind the vertex position buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.enableVertexAttribArray(this.aPosition);
+        gl.vertexAttribPointer(this.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+        // Bind the texture coordinate buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.enableVertexAttribArray(this.aTexCoord);
+        gl.vertexAttribPointer(this.aTexCoord, 2, gl.FLOAT, false, 0, 0);
+
+        // Set the transformation matrix
+        gl.uniformMatrix4fv(this.uTransform, false, trans);
+
+        // Make sure to set the sampler uniform to 0 (TEXTURE0)
+        gl.uniform1i(gl.getUniformLocation(this.shaderProgram, "uSampler"), 0);
+
+        // Bind the texture to TEXTURE0
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+
+        // Draw the triangles
+        gl.drawArrays(gl.TRIANGLES, 0, this.numTriangles);
+    }
+
+    // This method is called to set the texture of the mesh.
+    // The argument is an HTML IMG element containing the texture data.
+    setTexture(img) {
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            img
+        );
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+    }
+
+    // This method is called when the user changes the state of the
+    // "Show Texture" checkbox.
+    // The argument is a boolean that indicates if the checkbox is checked.
+    showTexture(show) {
+        gl.useProgram(this.shaderProgram);
+        gl.uniform1i(this.uShowTexture, show ? 1 : 0);
+    }
 }
