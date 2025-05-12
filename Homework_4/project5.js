@@ -76,71 +76,193 @@ function GetModelViewMatrix(
 // [TO-DO] Complete the implementation of the following class.
 
 class MeshDrawer {
-    // The constructor is a good place for taking care of the necessary initializations.
     constructor() {
-        // [TO-DO] initializations
+        // Vertex shader
+        const vertexShaderSource = `
+            attribute vec3 aPosition;
+            attribute vec2 aTexCoord;
+            attribute vec3 aNormal;
+
+            uniform mat4 uMVP;
+            uniform mat4 uMV;
+            uniform mat3 uNormalMatrix;
+            uniform bool uSwapYZ;
+
+            varying vec2 vTexCoord;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+
+            void main(void) {
+                vec3 pos = aPosition;
+                if (uSwapYZ) {
+                    pos = vec3(pos.x, pos.z, pos.y);
+                }
+                gl_Position = uMVP * vec4(pos, 1.0);
+                vTexCoord = aTexCoord;
+                vNormal = uNormalMatrix * aNormal;
+                vPosition = (uMV * vec4(pos, 1.0)).xyz;
+            }
+        `;
+
+        // Fragment shader
+        const fragmentShaderSource = `
+            precision mediump float;
+
+            uniform sampler2D uSampler;
+            uniform bool uShowTexture;
+            uniform vec3 uLightDir;
+            uniform float uShininess;
+
+            varying vec2 vTexCoord;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+
+            void main(void) {
+                vec3 N = normalize(vNormal);
+                vec3 L = normalize(uLightDir);
+                vec3 V = normalize(-vPosition);
+                vec3 R = reflect(-L, N);
+
+                float diff = max(dot(N, L), 0.0);
+                float spec = pow(max(dot(R, V), 0.0), uShininess);
+
+                vec3 color = vec3(1.0, 0.5, 0.0);
+                if (uShowTexture) {
+                    color = texture2D(uSampler, vTexCoord).rgb;
+                }
+
+                vec3 ambient = 0.1 * color;
+                vec3 diffuse = diff * color;
+                vec3 specular = spec * vec3(1.0);
+
+                gl_FragColor = vec4(ambient + diffuse + specular, 1.0);
+            }
+        `;
+
+        this.shaderProgram = InitShaderProgram(
+            vertexShaderSource,
+            fragmentShaderSource
+        );
+
+        // Buffers
+        this.vertexBuffer = gl.createBuffer();
+        this.texCoordBuffer = gl.createBuffer();
+        this.normalBuffer = gl.createBuffer();
+
+        // Attribute locations
+        this.aPosition = gl.getAttribLocation(this.shaderProgram, "aPosition");
+        this.aTexCoord = gl.getAttribLocation(this.shaderProgram, "aTexCoord");
+        this.aNormal = gl.getAttribLocation(this.shaderProgram, "aNormal");
+
+        // Uniform locations
+        this.uMVP = gl.getUniformLocation(this.shaderProgram, "uMVP");
+        this.uMV = gl.getUniformLocation(this.shaderProgram, "uMV");
+        this.uNormalMatrix = gl.getUniformLocation(
+            this.shaderProgram,
+            "uNormalMatrix"
+        );
+        this.uSwapYZ = gl.getUniformLocation(this.shaderProgram, "uSwapYZ");
+        this.uShowTexture = gl.getUniformLocation(
+            this.shaderProgram,
+            "uShowTexture"
+        );
+        this.uLightDir = gl.getUniformLocation(this.shaderProgram, "uLightDir");
+        this.uShininess = gl.getUniformLocation(
+            this.shaderProgram,
+            "uShininess"
+        );
+
+        // Texture
+        this.texture = gl.createTexture();
     }
 
-    // This method is called every time the user opens an OBJ file.
-    // The arguments of this function is an array of 3D vertex positions,
-    // an array of 2D texture coordinates, and an array of vertex normals.
-    // Every item in these arrays is a floating point value, representing one
-    // coordinate of the vertex position or texture coordinate.
-    // Every three consecutive elements in the vertPos array forms one vertex
-    // position and every three consecutive vertex positions form a triangle.
-    // Similarly, every two consecutive elements in the texCoords array
-    // form the texture coordinate of a vertex and every three consecutive
-    // elements in the normals array form a vertex normal.
-    // Note that this method can be called multiple times.
     setMesh(vertPos, texCoords, normals) {
-        // [TO-DO] Update the contents of the vertex buffer objects.
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array(vertPos),
+            gl.STATIC_DRAW
+        );
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array(texCoords),
+            gl.STATIC_DRAW
+        );
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array(normals),
+            gl.STATIC_DRAW
+        );
+
         this.numTriangles = vertPos.length / 3;
     }
 
-    // This method is called when the user changes the state of the
-    // "Swap Y-Z Axes" checkbox.
-    // The argument is a boolean that indicates if the checkbox is checked.
     swapYZ(swap) {
-        // [TO-DO] Set the uniform parameter(s) of the vertex shader
+        gl.useProgram(this.shaderProgram);
+        gl.uniform1i(this.uSwapYZ, swap ? 1 : 0);
     }
 
-    // This method is called to draw the triangular mesh.
-    // The arguments are the model-view-projection transformation matrixMVP,
-    // the model-view transformation matrixMV, the same matrix returned
-    // by the GetModelViewProjection function above, and the normal
-    // transformation matrix, which is the inverse-transpose of matrixMV.
     draw(matrixMVP, matrixMV, matrixNormal) {
-        // [TO-DO] Complete the WebGL initializations before drawing
+        gl.useProgram(this.shaderProgram);
 
+        // Position
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.enableVertexAttribArray(this.aPosition);
+        gl.vertexAttribPointer(this.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+        // Texture coordinates
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.enableVertexAttribArray(this.aTexCoord);
+        gl.vertexAttribPointer(this.aTexCoord, 2, gl.FLOAT, false, 0, 0);
+
+        // Normals
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.enableVertexAttribArray(this.aNormal);
+        gl.vertexAttribPointer(this.aNormal, 3, gl.FLOAT, false, 0, 0);
+
+        // Set matrices
+        gl.uniformMatrix4fv(this.uMVP, false, matrixMVP);
+        gl.uniformMatrix4fv(this.uMV, false, matrixMV);
+        gl.uniformMatrix3fv(this.uNormalMatrix, false, matrixNormal);
+
+        // Texture binding
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.uniform1i(gl.getUniformLocation(this.shaderProgram, "uSampler"), 0);
+
+        // Draw
         gl.drawArrays(gl.TRIANGLES, 0, this.numTriangles);
     }
 
-    // This method is called to set the texture of the mesh.
-    // The argument is an HTML IMG element containing the texture data.
     setTexture(img) {
-        // [TO-DO] Bind the texture
-
-        // You can set the texture image data using the following command.
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
 
-        // [TO-DO] Now that we have a texture, it might be a good idea to set
-        // some uniform parameter(s) of the fragment shader, so that it uses the texture.
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+        gl.useProgram(this.shaderProgram);
+        gl.uniform1i(this.uShowTexture, 1);
     }
 
-    // This method is called when the user changes the state of the
-    // "Show Texture" checkbox.
-    // The argument is a boolean that indicates if the checkbox is checked.
     showTexture(show) {
-        // [TO-DO] set the uniform parameter(s) of the fragment shader to specify if it should use the texture.
+        gl.useProgram(this.shaderProgram);
+        gl.uniform1i(this.uShowTexture, show ? 1 : 0);
     }
 
-    // This method is called to set the incoming light direction
     setLightDir(x, y, z) {
-        // [TO-DO] set the uniform parameter(s) of the fragment shader to specify the light direction.
+        gl.useProgram(this.shaderProgram);
+        gl.uniform3f(this.uLightDir, x, y, z);
     }
 
-    // This method is called to set the shininess of the material
     setShininess(shininess) {
-        // [TO-DO] set the uniform parameter(s) of the fragment shader to specify the shininess.
+        gl.useProgram(this.shaderProgram);
+        gl.uniform1f(this.uShininess, shininess);
     }
 }
